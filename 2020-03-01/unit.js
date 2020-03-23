@@ -3,8 +3,8 @@ var query_index = 0, h_gc;
 const query_index_max = 0xffffff;
 const h_id = {};
 
-async function send(value, handle, option){
-	process.send(value, handle, option);
+async function send(value, handle){
+	process.send(value, handle);
 }
 
 function query_increment(){
@@ -34,30 +34,22 @@ function start_gc(){
 
 const m = module.exports = {
 	interval_gc:5000,
-	deploy:(_unit, _processes, ... _host)=>{
-		if(!_processes) _processes = require('os').cpus().length;
+	deploy:(type_host, type_unit, unit_processes)=>{
+		if(!unit_processes) unit_processes = (process.env.unit_count||require('os').cpus().length)|0;
+		
+		const w_unit = new Array(unit_processes);
+		w_unit_init(type_host, 0)
+		for(var i = 1; i <= unit_processes; i++) w_unit_init(type_unit, i);
 
-		const w_unit = new Array((_host?_host.length:0) + _unit.length*_processes);
-		var i = 0;
-		const lenh = _host.length, lend = _unit.length;
-		if(_host){
-			for(; i<lenh; i++) w_unit_init(_host[i], i, {host_count:lenh, unit_count:lend});
-		}
-		const len = i + lend*_processes;
-		for(; i < len; i+=lend){
-			const len = i+lend;
-			for(var j=i,k=0; j<len; j++,k++) w_unit_init(_unit[k], j, {index_group:(i-lenh)/lenh});
-		}
-
-		function w_unit_init(__type, i, env){
-			const a = w_unit[i] = cluster.fork({ type:__type, index:i.toString(), ...env });
+		function w_unit_init(__type, i){
+			const a = w_unit[i] = cluster.fork({ type:__type, index:i.toString() });
 			a.on('message', (query, handle)=>{
 				if(w_unit[query.to]) w_unit[query.to].send(query, handle);
 				else a.send(query);
 			});
 			a.on('exit',(code, signal)=>{
 				w_unit[i] = null;
-				w_unit_init(__type, i, env);
+				w_unit_init(i);
 			});
 		}
 
@@ -67,10 +59,10 @@ const m = module.exports = {
 		const index = process.env.index|0;
 		const z = {
 			index: index,
-			sendTo:(_to, value, handle, option)=>{
+			sendTo:(_to, value, handle)=>{
 				const query = {id: 0, index: index, to: _to, value};
 				setImmediate(()=>{
-					send(query, handle, option);
+					send(query, handle);
 				});
 
 				return {
@@ -97,16 +89,13 @@ const m = module.exports = {
 			}
 		};
 
-		if('host_count' in process.env) z.host_count = process.env.host_count|0;
-		if('index_group' in process.env) z.index_group = process.env.index_group|0;
-
 		process.on('message',async(query, handle)=>{
 			if(query.id != 0 && query.index == query.to){
-				if(query.id in h_id)h_id[query.id].result_value(query.value);
+				h_id[query.id].result_value(query.value);
 			}else if(listner){
 				try{
 					const result = await listner(query.value, handle);
-					if(result!==undefined){
+					if(result){
 						query.to = query.index;
 						query.value = result;
 						send(query);
