@@ -11,7 +11,7 @@ function query_increment(){
 	const b = Buffer.alloc(4);
 	b.writeUInt32LE(query_index);
 	query_index = ( query_index + 1 ) % query_index_max;
-	return b.toString();
+	return b.toString('latin1');
 }
 
 function start_gc(){
@@ -50,12 +50,14 @@ const m = module.exports = {
 		}
 
 		function w_unit_init(__type, i, env){
+console.log('init',__type, i);
 			const a = w_unit[i] = cluster.fork({ type:__type, index:i.toString(), ...env });
 			a.on('message', (query, handle)=>{
 				if(w_unit[query.to]) w_unit[query.to].send(query, handle);
 				else a.send(query);
 			});
 			a.on('exit',(code, signal)=>{
+console.log('exit',__type, i);
 				w_unit[i] = null;
 				w_unit_init(__type, i, env);
 			});
@@ -98,6 +100,7 @@ const m = module.exports = {
 		};
 
 		if('host_count' in process.env) z.host_count = process.env.host_count|0;
+		if('unit_count' in process.env) z.unit_count = process.env.unit_count|0;
 		if('index_group' in process.env) z.index_group = process.env.index_group|0;
 
 		process.on('message',async(query, handle)=>{
